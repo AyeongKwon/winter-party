@@ -23,6 +23,7 @@
   var running = false, lastT = 0, scale = 1;
   var inputMode = matchMedia("(hover: none)").matches ? "touch" : "mouse";
   var lastPop = {};
+  var tut = null;            // 튜토리얼 진행 상태
 
   // ── 화면 맞추기 ─────────────────────────────
   function fit() {
@@ -54,9 +55,10 @@
   function renderMenu() {
     $("menuCards").innerHTML = CFG.snackOrder.map(function (id, i) {
       var s = CFG.snacks[id];
-      return '<button type="button" class="menu-card' + (i === menuIndex ? " selected" : "") + '" data-snack="' + id + '">' +
+      return '<div class="menu-col"><button type="button" class="menu-card' + (i === menuIndex ? " selected" : "") + '" data-snack="' + id + '">' +
         menuArt(id) + '<span class="menu-name">' + s.name + '</span><span class="menu-price">' + s.price.toLocaleString("ko-KR") +
-        '원</span><span class="menu-best">최고 ' + readBest(id).toLocaleString("ko-KR") + "원</span></button>";
+        '원</span><span class="menu-best">' + (tutDone(id) ? "최고 " + readBest(id).toLocaleString("ko-KR") + "원" : "처음이면 튜토리얼부터") +
+        '</span></button><button type="button" class="tut-chip" data-tut="' + id + '">튜토리얼</button></div>';
     }).join("");
   }
 
@@ -65,17 +67,26 @@
     screen = "menu";
     releaseHold();
     $("overScreen").hidden = true;
+    $("tutDone").hidden = true;
     $("menuScreen").hidden = false;
+    tut = null;
+    stage.classList.remove("in-tutorial");
+    $("tut").innerHTML = "";
     renderMenu();
   }
 
   // ── 게임 시작 ──────────────────────────────
-  function start(id) {
+  function start(id, tutorial) {
     snackId = id;
+    $("tutDone").hidden = true;
     L = SNACK_LOGIC[id];
     V = SNACK_VIEW[id];
     g = GameCore.create(CFG.common, CFG.snacks[id], L.flavors);
     st = L.create(CFG.snacks[id]);
+    g.tutorial = !!tutorial;
+    tut = tutorial ? { script: TUTORIALS[id], step: -1, wantFocus: null, html: "" } : null;
+    stage.classList.toggle("in-tutorial", !!tut);
+    $("tut").innerHTML = "";
     ids = L.stations(st).concat(["counter"]);
     focus = 0;
     holdId = null;
@@ -229,6 +240,55 @@
       }
     });
     renderHintbar();
+    if (tut) renderTutorial();
+  }
+
+  // ── 튜토리얼 ───────────────────────────────
+  function tutDone(id) {
+    try { return localStorage.getItem("winter_tut_" + id) === "1"; } catch (e) { return false; }
+  }
+  function markTutDone(id) {
+    try { localStorage.setItem("winter_tut_" + id, "1"); } catch (e) { /* 저장 불가 */ }
+  }
+
+  function updateTutorial() {
+    var steps = tut.script.steps, p = tut.script.progress(g, st);
+    if (p !== tut.step) {
+      tut.step = p;
+      if (p >= steps.length) {
+        markTutDone(snackId);
+        $("tut").innerHTML = "";
+        tut.html = "";
+        running = false;
+        screen = "tutdone";
+        releaseHold();
+        setTimeout(function () { $("tutDone").hidden = false; }, 700);
+        return;
+      }
+      tut.wantFocus = ids.indexOf(steps[p].focus);
+      if (steps[p].serve && g.customers.length === 0) {
+        var need = {};
+        g.flavors.forEach(function (f) { need[f] = 0; });
+        need[tut.script.serveFlavor(g)] = 1;
+        GameCore.addCustomer(g, need);
+      }
+    }
+    if (tut.wantFocus !== null && tut.wantFocus >= 0 && !holdId) { focus = tut.wantFocus; tut.wantFocus = null; }
+  }
+
+  function renderTutorial() {
+    var box = $("tut");
+    if (!tut || tut.step < 0 || tut.step >= tut.script.steps.length) return;
+    var step = tut.script.steps[tut.step], warn = tut.script.warn(g, st);
+    var html = (step.serve ? "" : '<div class="mentor" aria-hidden="true">👵</div>') +
+      '<div class="tut-card' + (step.serve ? " serve" : "") + '">' +
+      '<div class="tut-top"><span class="tut-step">' + (tut.step + 1) + " / " + tut.script.steps.length + '</span>' +
+      '<button type="button" class="tut-skip" id="tutSkip">건너뛰기</button></div>' +
+      '<p class="tut-text">' + (inputMode === "key" ? step.key : step.tap) + "</p>" +
+      (warn ? '<p class="tut-warn">' + warn + "</p>" : "") + "</div>";
+    if (tut.html !== html) { box.innerHTML = html; tut.html = html; }
+    var target = step.focus;
+    ids.forEach(function (id) { stationEls[id].el.classList.toggle("tut-target", id === target); });
   }
 
   // ── 효과 ───────────────────────────────────
@@ -327,7 +387,13 @@
     if (screen === "menu") {
       if (k === "ArrowLeft") { menuIndex = (menuIndex + 2) % 3; renderMenu(); }
       else if (k === "ArrowRight") { menuIndex = (menuIndex + 1) % 3; renderMenu(); }
-      else if ((k === " " || k === "Enter") && !e.repeat) start(CFG.snackOrder[menuIndex]);
+      else if ((k === " " || k === "Enter") && !e.repeat) { var mid = CFG.snackOrder[menuIndex]; start(mid, !tutDone(mid)); }
+      else if (k === "t" || k === "T") start(CFG.snackOrder[menuIndex], true);
+      return;
+    }
+    if (screen === "tutdone") {
+      if ((k === " " || k === "Enter") && !e.repeat) start(snackId, false);
+      else if (k === "Escape") showMenu();
       return;
     }
     if (screen === "over") {
@@ -336,6 +402,7 @@
       return;
     }
     if (k === "Escape") { showMenu(); return; }
+    if (tut && (k === "s" || k === "S")) { markTutDone(snackId); start(snackId, false); return; }
     if (k === "ArrowLeft") moveFocus(-1);
     else if (k === "ArrowRight") moveFocus(1);
     else if (k === "ArrowUp" && !e.repeat) arrow("up");
@@ -360,9 +427,11 @@
     var t = e.target, el;
 
     if (screen === "menu") {
-      if ((el = t.closest(".menu-card"))) start(el.dataset.snack);
+      if ((el = t.closest(".tut-chip"))) start(el.dataset.tut, true);
+      else if ((el = t.closest(".menu-card"))) start(el.dataset.snack, !tutDone(el.dataset.snack));
       return;
     }
+    if (t.closest("#tutSkip")) { markTutDone(snackId); start(snackId, false); e.preventDefault(); return; }
     if (screen !== "play") return;
 
     if ((el = t.closest("[data-serve]"))) {
@@ -419,6 +488,8 @@
     L.update(g, st, dt, ev);
     GameCore.update(g, dt, ev);
     handle(ev);
+    if (tut) updateTutorial();
+    if (!running) return;
     render();
     if (g.over) { running = false; holdId = null; return; }
     requestAnimationFrame(loop);
@@ -448,6 +519,8 @@
   $("menuBtn").addEventListener("click", showMenu);
   $("retryBtn").addEventListener("click", function () { start(snackId); });
   $("backBtn").addEventListener("click", showMenu);
+  $("tutStartBtn").addEventListener("click", function () { start(snackId, false); });
+  $("tutMenuBtn").addEventListener("click", showMenu);
   window.addEventListener("resize", fit);
   fit();
   makeSnow();

@@ -27,7 +27,8 @@ var GameCore = (function () {
       customers: [],           // [0]이 맨 앞 손님
       nextCustomerIn: common.firstCustomerDelay,
       nextId: 1,
-      ready: ready             // 완성되어 기다리는 간식 (맛별)
+      ready: ready,            // 완성되어 기다리는 간식 (맛별)
+      tutorial: false          // 튜토리얼 중에는 손님이 기다려 주고 하트가 줄지 않음
     };
   }
 
@@ -43,6 +44,7 @@ var GameCore = (function () {
         cu.leaveTimer -= dt;
         continue;
       }
+      if (s.tutorial) continue;
       cu.patience -= dt;
       if (cu.patience <= 0) {
         cu.patience = 0;
@@ -60,6 +62,7 @@ var GameCore = (function () {
     }
     s.customers = s.customers.filter(function (c) { return !(c.leaving && c.leaveTimer <= 0); });
 
+    if (s.tutorial) return;
     s.nextCustomerIn -= dt;
     if (s.nextCustomerIn <= 0) {
       if (s.customers.length >= s.common.maxCustomers) {
@@ -90,7 +93,7 @@ var GameCore = (function () {
     var n = orderCount(s), need = {};
     s.flavors.forEach(function (f) { need[f] = 0; });
     for (var i = 0; i < n; i++) need[s.flavors[Math.floor(s.rng() * s.flavors.length)]]++;
-    var p = s.snack.patienceBase + n * s.snack.patiencePerItem;
+    var p = (s.snack.patienceBase + n * s.snack.patiencePerItem) * (s.common.patienceMultiplier || 1);
     return {
       id: s.nextId++,
       look: Math.floor(s.rng() * 3),
@@ -101,6 +104,14 @@ var GameCore = (function () {
       leaving: null,
       leaveTimer: 0
     };
+  }
+
+  // 튜토리얼용 손님 (주문을 직접 정함)
+  function addCustomer(s, need) {
+    var total = 0;
+    for (var f in need) total += need[f];
+    var p = s.snack.patienceBase + total * s.snack.patiencePerItem;
+    s.customers.push({ id: s.nextId++, look: 0, total: total, need: need, patience: p, maxPatience: p, leaving: null, leaveTimer: 0 });
   }
 
   function front(s) {
@@ -148,7 +159,7 @@ var GameCore = (function () {
 
   return {
     create: create, update: update, serve: serve, addReady: addReady,
-    mood: mood, front: front, pop: pop, spawnInterval: spawnInterval
+    mood: mood, front: front, pop: pop, spawnInterval: spawnInterval, addCustomer: addCustomer
   };
 })();
 

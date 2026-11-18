@@ -7,10 +7,11 @@ var GAME_CONFIG = {
   common: {
     startHearts: 3,           // 하트 3개, 0개면 게임 오버
     maxCustomers: 2,          // 동시에 기다리는 손님 (항상 맨 앞 손님에게 줌)
-    firstCustomerDelay: 1.5,  // 첫 손님이 오는 시간
-    spawnIntervalStart: 14,   // 처음 손님 등장 간격
-    spawnIntervalMin: 6,      // 가장 빠를 때 손님 등장 간격
-    spawnIntervalDecay: 0.08, // 1초마다 줄어드는 양 (14 → 6까지 약 100초)
+    patienceMultiplier: 1.0,  // ★ 손님 성격 한 번에 조절: 1.5면 모든 손님이 1.5배 오래 기다림
+    firstCustomerDelay: 3,    // 첫 손님이 오는 시간
+    spawnIntervalStart: 18,   // 처음 손님 등장 간격
+    spawnIntervalMin: 8,      // 가장 빠를 때 손님 등장 간격
+    spawnIntervalDecay: 0.06, // 1초마다 줄어드는 양 (18 → 8까지 약 170초)
     wrongItemPenalty: 3,      // 다른 맛을 주면 깎이는 인내심(초)
     // 경과 시간(초)에 따른 주문 개수 확률 (가중치, 1개~5개)
     orderWeights: [
@@ -26,8 +27,8 @@ var GAME_CONFIG = {
     bungeo: {
       name: "붕어빵",
       price: 1000,
-      patienceBase: 12,       // 인내심 = patienceBase + 개수 × patiencePerItem
-      patiencePerItem: 8,
+      patienceBase: 25,       // 인내심 = patienceBase + 개수 × patiencePerItem
+      patiencePerItem: 10,    //   1개 35초, 5개 75초
       slots: 3,               // 붕어빵 틀 칸 수
       pourRate: 0.9,          // 꾹 누르고 있을 때 1초당 반죽이 차는 양
       pourGoodMin: 0.55,      // 이 이상에서 손을 떼면 성공
@@ -40,8 +41,8 @@ var GAME_CONFIG = {
     hotteok: {
       name: "호떡",
       price: 2000,
-      patienceBase: 12,
-      patiencePerItem: 8,
+      patienceBase: 25,
+      patiencePerItem: 10,
       slots: 3,
       stirTaps: 6,            // 스페이스 몇 번에 반죽 1덩이
       shapeTaps: 4,           // 스페이스 몇 번에 동그랗게
@@ -57,8 +58,8 @@ var GAME_CONFIG = {
     eomuk: {
       name: "어묵",
       price: 500,
-      patienceBase: 12,
-      patiencePerItem: 5,
+      patienceBase: 30,       // 처음엔 국물 끓이는 시간이 필요해서 조금 더 김
+      patiencePerItem: 6,
       skewerSteps: 4,         // 꼬치 하나에 필요한 지그재그 횟수
       skewerCapacity: 6,      // 미리 만들어 둘 수 있는 꼬치 수
       waterRate: 0.8,         // 물 붓기

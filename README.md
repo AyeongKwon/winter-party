@@ -17,6 +17,12 @@
 | 호떡 | 2,000원 |
 | 어묵 | 500원 |
 
+## 튜토리얼
+
+간식을 처음 고르면 튜토리얼이 자동으로 시작돼요. 할머니 사장님이 단계마다 무엇을 누를지 알려주고,
+해야 할 작업대가 반짝여요. 튜토리얼 중에는 손님이 재촉하지 않고 하트도 줄지 않아요.
+메뉴의 **튜토리얼** 버튼이나 <kbd>T</kbd> 키로 언제든 다시 볼 수 있어요.
+
 ## 조작
 
 | 동작 | 키보드 | 마우스 | 폰 |
@@ -78,6 +84,7 @@ winter-party/
 │   ├── bungeo.js
 │   ├── hotteok.js
 │   └── eomuk.js
+├── js/tutorial.js      간식별 튜토리얼 대본
 ├── js/assets.js        이미지 파일 목록
 ├── js/ui.js            화면 전환, 키보드·마우스·터치 입력
 ├── assets/             이미지 (assets/README.md에 파일명 정리)
@@ -90,8 +97,9 @@ winter-party/
 
 | 값 | 의미 |
 |---|---|
+| `common.patienceMultiplier` | ★ 모든 손님의 인내심 배율 (1.5 = 1.5배 오래 기다림) |
 | `common.maxCustomers` | 동시에 기다리는 손님 수 (기본 2) |
-| `common.spawnIntervalStart / Min` | 손님 등장 간격 (처음 14초 → 최소 6초) |
+| `common.spawnIntervalStart / Min` | 손님 등장 간격 (처음 18초 → 최소 8초) |
 | `snacks.*.price` | 간식 가격 |
 | `snacks.*.patienceBase / patiencePerItem` | 손님 인내심 |
 | `snacks.hotteok.stirTaps / shapeTaps` | 젓기·만지기에 필요한 연타 수 |

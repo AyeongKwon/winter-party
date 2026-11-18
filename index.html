@@ -32,6 +32,7 @@
       <div class="work-surface" aria-hidden="true"></div>
       <div id="stations"></div>
 
+      <div class="tut" id="tut" aria-live="polite"></div>
       <div class="hintbar" id="hintbar" aria-live="polite"></div>
 
       <div class="fx" id="fx"></div>
@@ -44,7 +45,22 @@
         <div class="menu-cards" id="menuCards"></div>
         <div class="keys-help">
           <p><kbd>←</kbd><kbd>→</kbd> 작업대 고르기 <kbd>스페이스</kbd> 하기 <kbd>↑</kbd><kbd>↓</kbd> 고르기·조절 <kbd>엔터</kbd> 손님에게 주기</p>
+          <p><kbd>T</kbd> 고른 간식 튜토리얼</p>
           <p class="touch-only">폰에서는 탭, 길게 누르기, 문지르기로 해요</p>
+        </div>
+      </section>
+
+      <!-- 튜토리얼 완료 -->
+      <section class="tut-done" id="tutDone" hidden>
+        <div class="tut-done-card">
+          <div class="tut-done-emoji" aria-hidden="true">👵</div>
+          <h2>잘했어요!</h2>
+          <p>이제 진짜 손님들이 와요.<br>늦으면 하트가 줄어드니 서둘러요!</p>
+          <div class="over-buttons">
+            <button class="btn" id="tutStartBtn" type="button">장사 시작</button>
+            <button class="btn quiet" id="tutMenuBtn" type="button">메뉴로</button>
+          </div>
+          <p class="keys-help small"><kbd>스페이스</kbd> 장사 시작 <kbd>Esc</kbd> 메뉴</p>
         </div>
       </section>
 
@@ -74,6 +90,7 @@
   <script src="js/view/bungeo.js"></script>
   <script src="js/view/hotteok.js"></script>
   <script src="js/view/eomuk.js"></script>
+  <script src="js/tutorial.js"></script>
   <script src="js/ui.js"></script>
 </body>
 </html>
