@@ -1,57 +1,86 @@
 /*
- * 호떡 만들기 — 게임 설정
- * 밸런스 조정은 이 파일의 숫자만 바꾸면 됩니다.
- * 시간 단위는 모두 "초"입니다.
+ * 겨울 간식 포장마차 — 게임 설정
+ * 밸런스 조정은 이 파일의 숫자만 바꾸면 됩니다. 시간 단위는 "초"입니다.
  */
-var HOTTEOK_CONFIG = {
-  // ── 점수 / 하트 ─────────────────────────────
-  pricePerHotteok: 2000,     // 호떡 1개 = 2,000원
-  startHearts: 3,            // 하트 3개, 0개면 게임 오버
+var GAME_CONFIG = {
+  // ── 모든 간식 공통 ───────────────────────────
+  common: {
+    startHearts: 3,           // 하트 3개, 0개면 게임 오버
+    maxCustomers: 2,          // 동시에 기다리는 손님 (항상 맨 앞 손님에게 줌)
+    firstCustomerDelay: 1.5,  // 첫 손님이 오는 시간
+    spawnIntervalStart: 14,   // 처음 손님 등장 간격
+    spawnIntervalMin: 6,      // 가장 빠를 때 손님 등장 간격
+    spawnIntervalDecay: 0.08, // 1초마다 줄어드는 양 (14 → 6까지 약 100초)
+    wrongItemPenalty: 3,      // 다른 맛을 주면 깎이는 인내심(초)
+    // 경과 시간(초)에 따른 주문 개수 확률 (가중치, 1개~5개)
+    orderWeights: [
+      { until: 30, weights: [6, 4, 0, 0, 0] },
+      { until: 90, weights: [4, 4, 3, 0, 0] },
+      { until: Infinity, weights: [2, 3, 3, 2, 2] }
+    ],
+    moodThresholds: { happy: 0.6, neutral: 0.3 }
+  },
 
-  // ── 손님 ───────────────────────────────────
-  maxCustomers: 3,           // 동시에 기다리는 손님 수
-  firstCustomerDelay: 1.0,   // 게임 시작 후 첫 손님이 오는 시간
-  spawnIntervalStart: 12,    // 처음 손님 등장 간격
-  spawnIntervalMin: 5,       // 가장 빠를 때 손님 등장 간격
-  spawnIntervalDecay: 0.1,   // 1초 지날 때마다 간격이 줄어드는 양 (12 → 5까지 약 70초)
+  // ── 간식별 설정 ──────────────────────────────
+  snacks: {
+    bungeo: {
+      name: "붕어빵",
+      price: 1000,
+      patienceBase: 12,       // 인내심 = patienceBase + 개수 × patiencePerItem
+      patiencePerItem: 8,
+      slots: 3,               // 붕어빵 틀 칸 수
+      pourRate: 0.9,          // 꾹 누르고 있을 때 1초당 반죽이 차는 양
+      pourGoodMin: 0.55,      // 이 이상에서 손을 떼면 성공
+      pourOver: 1.0,          // 여기 닿으면 넘침 (실패)
+      cookRateA: 1 / 3.0,     // 앞면이 노릇해지는 데 3초
+      cookRateB: 1 / 2.5,     // 뒷면 2.5초
+      cookReady: 0.7,         // 이 이상이면 뒤집기/꺼내기 가능
+      cookBurnt: 1.5          // 여기 닿으면 탐
+    },
+    hotteok: {
+      name: "호떡",
+      price: 2000,
+      patienceBase: 12,
+      patiencePerItem: 8,
+      slots: 3,
+      stirTaps: 6,            // 스페이스 몇 번에 반죽 1덩이
+      shapeTaps: 4,           // 스페이스 몇 번에 동그랗게
+      doughCapacity: 3,       // 접시에 올릴 수 있는 반죽 수
+      pressRate: 1.0,
+      pressGoodMin: 0.55,
+      pressBurst: 1.0,        // 시럽 터짐
+      cookRateA: 1 / 3.0,
+      cookRateB: 1 / 2.5,
+      cookReady: 0.7,
+      cookBurnt: 1.5
+    },
+    eomuk: {
+      name: "어묵",
+      price: 500,
+      patienceBase: 12,
+      patiencePerItem: 5,
+      skewerSteps: 4,         // 꼬치 하나에 필요한 지그재그 횟수
+      skewerCapacity: 6,      // 미리 만들어 둘 수 있는 꼬치 수
+      waterRate: 0.8,         // 물 붓기
+      waterGoodMin: 0.6,
+      waterOver: 1.0,
+      chopTaps: 5,            // 무, 꽃게 손질에 필요한 스페이스 횟수 (각각)
+      heatTargets: [0, 0.42, 0.68, 0.95], // 불 세기 0~3단계가 향하는 온도
+      tempRate: 0.35,         // 온도가 목표로 따라가는 속도
+      driftRange: 0.18,       // 바람 때문에 온도가 흔들리는 정도
+      driftEvery: 1.6,        // 흔들림이 바뀌는 간격
+      goodTemp: [0.55, 0.82], // 이 온도 구간을 유지하면 국물이 끓음
+      boilNeeded: 4,          // 좋은 온도로 이만큼 유지하면 국물 완성
+      overTemp: 0.9,          // 이 온도 이상이 계속되면
+      overTime: 2.0,          //   이 시간 뒤 끓어 넘침 (실패)
+      servingsPerPot: 6,      // 국물 한 솥으로 담을 수 있는 그릇 수
+      ladleRate: 1.1,         // 국물 담기
+      ladleGoodMin: 0.6,
+      ladleOver: 1.0
+    }
+  },
 
-  patienceBase: 10,          // 인내심 = patienceBase + 주문 개수 × patiencePerItem
-  patiencePerItem: 7,        //   1개: 17초, 5개: 45초
-
-  // 경과 시간(초)에 따른 주문 개수 확률 (가중치, 순서대로 1개~5개)
-  orderWeights: [
-    { until: 30,       weights: [6, 4, 0, 0, 0] }, // 처음 30초: 1~2개 위주
-    { until: 90,       weights: [4, 4, 3, 0, 0] }, // 30~90초: 1~3개
-    { until: Infinity, weights: [2, 3, 3, 2, 2] }  // 이후: 1~5개
-  ],
-
-  // 표정이 바뀌는 인내심 비율
-  moodThresholds: { happy: 0.6, neutral: 0.3 }, // 60% 이상 😊, 30% 이상 😐, 그 아래 😠
-
-  // ── 1단계: 반죽 젓기 ────────────────────────
-  stirDistancePerDough: 800,  // 볼을 이만큼(px) 문지르면 반죽 1덩이 완성
-  doughPlateCapacity: 3,      // 접시에 올릴 수 있는 반죽 수
-
-  // ── 2단계: 반죽 만지기 ──────────────────────
-  shapeDistance: 450,         // 반죽을 이만큼(px) 문지르면 동그랗게 완성
-
-  // ── 3단계: 누르기 ───────────────────────────
-  pressRate: 1.0,             // 꾹 누르고 있을 때 1초당 차오르는 양
-  pressGoodMin: 0.55,         // 이 값 이상에서 손을 떼면 성공
-  pressBurst: 1.0,            // 이 값에 닿으면 시럽이 터짐 (실패)
-
-  // ── 3단계: 굽기 ─────────────────────────────
-  cookRateA: 1 / 3.0,         // 앞면: 3초면 노릇 (1.0)
-  cookRateB: 1 / 2.5,         // 뒷면: 2.5초면 노릇
-  cookReady: 0.7,             // 이 값 이상이면 뒤집기 / 꺼내기 가능
-  cookBurnt: 1.5,             // 이 값에 닿으면 탐 (실패)
-
-  // ── 철판 칸 위치 (철판 이미지 기준 %, 디자인에 맞게 조정) ──
-  panSlots: [
-    { x: 27, y: 42 },
-    { x: 50, y: 66 },
-    { x: 73, y: 42 }
-  ]
+  snackOrder: ["bungeo", "hotteok", "eomuk"]
 };
 
-if (typeof module !== "undefined") module.exports = HOTTEOK_CONFIG;
+if (typeof module !== "undefined") module.exports = GAME_CONFIG;

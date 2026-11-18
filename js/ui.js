@@ -1,545 +1,456 @@
 /*
- * 호떡 만들기 — 화면 그리기와 터치 입력
- * 규칙은 logic.js, 숫자는 config.js에 있습니다.
+ * 겨울 간식 포장마차 — 화면과 입력
+ * 키보드: ←→ 작업대 고르기 / 스페이스 하기(꾹 = 계속) / ↑↓ 고르기·조절 / 엔터 손님에게 주기 / Esc 메뉴
+ * 마우스: 클릭 = 스페이스, 꾹 클릭 = 스페이스 꾹, 화면의 ▲▼ 버튼 = ↑↓
+ * 터치:   탭, 길게 누르기, 문지르기(연타 대신)
  */
 (function () {
   "use strict";
 
-  var CFG = HOTTEOK_CONFIG;
-  var L = HotteokLogic;
-  var A = HotteokAssets;
+  var CFG = GAME_CONFIG;
   var W = 393, H = 852;
+  var COUNTER = { x: 10, y: 338, w: 373, h: 84 };
+  var RUB_STEP = 60; // 문지르기 이만큼(px)이 연타 1번
 
   var $ = function (id) { return document.getElementById(id); };
   var stage = $("stage");
 
-  var state = null;
-  var running = false;
-  var lastT = 0;
-  var scale = 1;
-  var actions = {};     // pointerId → { kind, index, x, y }
-  var lastHint = {};    // 같은 안내가 너무 자주 뜨지 않게
+  var screen = "menu";       // menu | play | over
+  var menuIndex = 0;
+  var snackId = null, L = null, V = null, g = null, st = null;
+  var ids = [], focus = 0;
+  var holdId = null, pointer = null;
+  var running = false, lastT = 0, scale = 1;
+  var inputMode = matchMedia("(hover: none)").matches ? "touch" : "mouse";
+  var lastPop = {};
 
-  // 화면 위치 (팝업 표시용, 393×852 기준)
-  var STOVE = { x: 20, y: 548, w: 353, h: 252 };
-  var SPOT = { tray: [70, 455], bowl: [197, 455], plate: [324, 455] };
-  var DOUGH_POS = [[14, 32], [60, 32], [37, 58]];
-
-  // ── 화면 크기 맞추기 ───────────────────────
+  // ── 화면 맞추기 ─────────────────────────────
   function fit() {
     scale = Math.min(window.innerWidth / W, window.innerHeight / H);
-    stage.style.setProperty("--fit", "scale(" + scale + ")");
     stage.style.transform = "scale(" + scale + ")";
+    stage.style.setProperty("--fit", "scale(" + scale + ")");
   }
 
-  // ── 에셋 적용 ─────────────────────────────
-  function useAsset(el, key) {
-    if (!A.has(key)) return false;
-    var img = el.querySelector("img.asset");
-    if (!img) {
-      img = document.createElement("img");
-      img.className = "asset";
-      img.alt = "";
-      img.draggable = false;
-      el.appendChild(img);
+  // ── 눈 ─────────────────────────────────────
+  function makeSnow() {
+    var box = $("snow"), html = "";
+    for (var i = 0; i < 38; i++) {
+      var size = 2 + Math.random() * 4;
+      html += '<i style="left:' + (Math.random() * 100).toFixed(1) + "%;width:" + size.toFixed(1) + "px;height:" + size.toFixed(1) +
+        "px;animation-duration:" + (6 + Math.random() * 8).toFixed(1) + "s;animation-delay:-" + (Math.random() * 12).toFixed(1) +
+        "s;opacity:" + (0.4 + Math.random() * 0.5).toFixed(2) + '"></i>';
     }
-    img.src = A.src(key);
-    el.classList.add("has-img");
-    return true;
+    box.innerHTML = html;
   }
 
-  function applyStaticAssets() {
-    var els = document.querySelectorAll("[data-asset]");
-    for (var i = 0; i < els.length; i++) useAsset(els[i], els[i].getAttribute("data-asset"));
-    if (A.has("pan")) {
-      document.querySelectorAll(".slot").forEach(function (s) { s.classList.add("has-img-pan"); });
-    }
+  // ── 메뉴 ───────────────────────────────────
+  function menuArt(id) {
+    if (Assets.has("menu_" + id)) return Assets.img("menu_" + id, "menu-img");
+    if (id === "bungeo") return '<div class="menu-fish">' + Kit.fish("#dd9440", "#8a4a10", Kit.fishDetails("#8a4a10")) + "</div>";
+    if (id === "hotteok") return '<div class="menu-disc"></div>';
+    return '<div class="menu-emoji">🍢</div>';
   }
 
-  // ── DOM 만들기 ────────────────────────────
-  var heartEls = [], customerEls = [], slotEls = [], doughEls = [];
-
-  function build() {
-    var hearts = $("hearts");
-    hearts.innerHTML = "";
-    heartEls = [];
-    for (var h = 0; h < CFG.startHearts; h++) {
-      var he = document.createElement("div");
-      he.className = "heart";
-      hearts.appendChild(he);
-      heartEls.push(he);
-    }
-
-    var street = $("customers");
-    street.innerHTML = "";
-    customerEls = [];
-    for (var c = 0; c < CFG.maxCustomers; c++) {
-      var ce = document.createElement("div");
-      ce.className = "customer";
-      ce.dataset.index = c;
-      ce.style.left = (2 + c * (W - 4) / CFG.maxCustomers) + "px";
-      ce.style.width = ((W - 4) / CFG.maxCustomers) + "px";
-      ce.innerHTML = '<div class="bubble"></div><div class="patience"><i></i></div><div class="face"></div>';
-      ce.hidden = true;
-      street.appendChild(ce);
-      customerEls.push({ el: ce, id: null, key: "", moodKey: "" });
-    }
-
-    var slots = $("slots");
-    slots.innerHTML = "";
-    slotEls = [];
-    CFG.panSlots.forEach(function (p, i) {
-      var se = document.createElement("div");
-      se.className = "slot";
-      se.dataset.index = i;
-      se.style.left = p.x + "%";
-      se.style.top = p.y + "%";
-      se.innerHTML = '<div class="hotteok" hidden></div><div class="gauge"></div><div class="slot-hint"></div>';
-      slots.appendChild(se);
-      slotEls.push({ el: se, hot: se.children[0], gauge: se.children[1], hint: se.children[2], lastState: "", gaugeKey: "" });
-    });
-
-    var balls = $("doughBalls");
-    balls.innerHTML = "";
-    doughEls = [];
-    for (var d = 0; d < CFG.doughPlateCapacity; d++) {
-      var de = document.createElement("div");
-      de.className = "dough";
-      de.dataset.index = d;
-      var pos = DOUGH_POS[d % DOUGH_POS.length];
-      de.style.left = pos[0] + "px";
-      de.style.top = pos[1] + "px";
-      de.innerHTML = '<div class="ring"><i></i></div><div class="ball"></div>';
-      de.hidden = true;
-      balls.appendChild(de);
-      doughEls.push(de);
-    }
-
-    // 철판 위 호떡 이미지 레이어
-    if (A.has("hotteok_raw")) {
-      slotEls.forEach(function (s) {
-        s.hot.classList.add("imgmode");
-        ["hotteok_raw", "hotteok_golden", "hotteok_burnt", "hotteok_burst"].forEach(function (k) {
-          var img = document.createElement("img");
-          img.className = "asset";
-          img.alt = "";
-          img.dataset.layer = k;
-          img.src = A.src(k) || "";
-          s.hot.appendChild(img);
-        });
-      });
-    }
+  function renderMenu() {
+    $("menuCards").innerHTML = CFG.snackOrder.map(function (id, i) {
+      var s = CFG.snacks[id];
+      return '<button type="button" class="menu-card' + (i === menuIndex ? " selected" : "") + '" data-snack="' + id + '">' +
+        menuArt(id) + '<span class="menu-name">' + s.name + '</span><span class="menu-price">' + s.price.toLocaleString("ko-KR") +
+        '원</span><span class="menu-best">최고 ' + readBest(id).toLocaleString("ko-KR") + "원</span></button>";
+    }).join("");
   }
 
-  // ── 그리기 ───────────────────────────────
-  function lerpColor(a, b, t) {
-    t = Math.max(0, Math.min(1, t));
-    var pa = parseInt(a.slice(1), 16), pb = parseInt(b.slice(1), 16);
-    var r = Math.round(((pa >> 16) & 255) + (((pb >> 16) & 255) - ((pa >> 16) & 255)) * t);
-    var g = Math.round(((pa >> 8) & 255) + (((pb >> 8) & 255) - ((pa >> 8) & 255)) * t);
-    var bl = Math.round((pa & 255) + ((pb & 255) - (pa & 255)) * t);
-    return "rgb(" + r + "," + g + "," + bl + ")";
-  }
-  function cookColor(v) {
-    if (v <= 1) return lerpColor("#f3dcae", "#d98a2b", v);
-    return lerpColor("#d98a2b", "#3a2414", (v - 1) / (CFG.cookBurnt - 1));
-  }
-
-  function render() {
-    var s = state;
-
-    // 하트
-    heartEls.forEach(function (he, i) {
-      var full = i < s.hearts;
-      var key = full ? "heart_full" : "heart_empty";
-      if (he.dataset.key === key) return;
-      he.dataset.key = key;
-      he.innerHTML = "";
-      he.classList.remove("has-img");
-      if (!useAsset(he, key)) he.textContent = full ? "❤️" : "🤍";
-    });
-
-    // 점수
-    $("score").textContent = s.score.toLocaleString("ko-KR");
-
-    // 손님
-    s.customers.forEach(function (cu, i) {
-      var ref = customerEls[i], el = ref.el;
-      if (!cu) {
-        if (ref.id !== null) { el.hidden = true; ref.id = null; }
-        return;
-      }
-      if (ref.id !== cu.id) {
-        ref.id = cu.id;
-        ref.key = "";
-        ref.moodKey = "";
-        el.hidden = false;
-        el.className = "customer enter";
-        void el.offsetWidth;
-        el.className = "customer";
-      }
-      var key = cu.order + "-" + cu.received;
-      if (ref.key !== key) {
-        ref.key = key;
-        var dots = "";
-        for (var k = 0; k < cu.order; k++) dots += '<span class="order-dot' + (k < cu.received ? " got" : "") + '"></span>';
-        el.children[0].innerHTML = dots;
-      }
-      var ratio = cu.patience / cu.maxPatience;
-      var bar = el.children[1].firstChild;
-      bar.style.width = (ratio * 100) + "%";
-      bar.style.background = ratio >= CFG.moodThresholds.happy ? "var(--good)"
-        : ratio >= CFG.moodThresholds.neutral ? "var(--warn)" : "var(--bad)";
-
-      var mood = L.mood(s, cu);
-      if (ref.moodKey !== mood) {
-        ref.moodKey = mood;
-        var face = el.children[2];
-        face.innerHTML = "";
-        face.classList.remove("has-img");
-        if (!useAsset(face, "customer_" + mood)) {
-          var em = { happy: "😊", neutral: "😐", angry: "😠", furious: "🤬" }[mood];
-          face.innerHTML = '<span class="face-emoji">' + em + "</span>";
-        }
-        el.classList.toggle("angry", mood === "angry");
-      }
-      if (cu.leaving === "happy") el.classList.add("leave-happy");
-      if (cu.leaving === "angry") el.classList.add("leave-angry");
-    });
-
-    // 완성 접시
-    $("trayCount").textContent = s.ready;
-    $("trayCount").classList.toggle("zero", s.ready === 0);
-    var stack = $("trayStack");
-    var shown = Math.min(s.ready, 5);
-    if (stack.childElementCount !== shown) {
-      stack.innerHTML = "";
-      for (var t = 0; t < shown; t++) {
-        var m = document.createElement("div");
-        m.className = "mini";
-        m.style.top = (46 - t * 9) + "px";
-        if (A.has("hotteok_golden")) {
-          m.style.background = "url(" + A.src("hotteok_golden") + ") center/contain no-repeat";
-          m.style.border = "0";
-        }
-        stack.appendChild(m);
-      }
-    }
-
-    // 볼
-    $("stirBar").style.width = (s.stirProgress * 100) + "%";
-
-    // 반죽 접시
-    doughEls.forEach(function (de, i) {
-      var d = s.doughs[i];
-      if (!d) { de.hidden = true; return; }
-      de.hidden = false;
-      var ball = de.children[1];
-      var useImg = A.has("dough_raw") && A.has("dough_round");
-      var ready = d.shape >= 1;
-      de.classList.toggle("ready", ready);
-      de.firstChild.firstChild.style.width = (d.shape * 100) + "%";
-      if (useImg) {
-        var want = ready ? "dough_round" : "dough_raw";
-        if (de.dataset.img !== want) {
-          de.dataset.img = want;
-          ball.style.background = "url(" + A.src(want) + ") center/contain no-repeat";
-          ball.style.boxShadow = "none";
-        }
-      } else {
-        var t2 = d.shape;
-        var lump = function (a) { return (a + (50 - a) * t2).toFixed(1) + "%"; };
-        ball.style.borderRadius = lump(38) + " " + lump(62) + " " + lump(66) + " " + lump(34) + " / " +
-          lump(44) + " " + lump(36) + " " + lump(64) + " " + lump(56);
-      }
-    });
-
-    // 철판
-    var anyReadyDough = s.doughs.some(function (d) { return d.shape >= 1; });
-    var pressingSlot = -1;
-    Object.keys(actions).forEach(function (k) { if (actions[k].kind === "press") pressingSlot = actions[k].index; });
-
-    s.slots.forEach(function (sl, i) {
-      var r = slotEls[i], hot = r.hot, hint = "", go = false, g = null;
-      if (sl.state !== r.lastState) {
-        if (r.lastState === "cookA" && sl.state === "cookB") {
-          hot.classList.remove("flip"); void hot.offsetWidth; hot.classList.add("flip");
-        }
-        r.lastState = sl.state;
-      }
-      hot.hidden = sl.state === "empty";
-      hot.classList.toggle("dome", sl.state === "dough");
-      hot.classList.toggle("burst", sl.state === "burst");
-
-      var imgMode = hot.classList.contains("imgmode");
-      if (sl.state === "empty") {
-        if (anyReadyDough) { hint = "올리기"; go = true; }
-      } else if (sl.state === "dough") {
-        var f = 1 + sl.press * 0.35;
-        hot.style.transform = "scale(" + f + "," + (1 / f) + ")";
-        hint = pressingSlot === i ? "" : "꾹 누르기";
-        g = { v: sl.press / CFG.pressBurst, z0: CFG.pressGoodMin / CFG.pressBurst, z1: 0.97, danger: sl.press > 0.85 * CFG.pressBurst };
-      } else {
-        hot.style.transform = "";
-        var top, rim, shownV;
-        if (sl.state === "cookA") {
-          top = 0.05; rim = sl.cookA; shownV = sl.cookA;
-          if (sl.cookA >= CFG.cookReady) { hint = "뒤집기"; go = true; }
-          g = { v: sl.cookA / CFG.cookBurnt, z0: CFG.cookReady / CFG.cookBurnt, z1: 1.2 / CFG.cookBurnt, danger: sl.cookA > 1.25 };
-        } else if (sl.state === "cookB") {
-          top = sl.cookA; rim = sl.cookB; shownV = Math.max(sl.cookA, sl.cookB);
-          if (sl.cookB >= CFG.cookReady) { hint = "꺼내기"; go = true; }
-          g = { v: sl.cookB / CFG.cookBurnt, z0: CFG.cookReady / CFG.cookBurnt, z1: 1.2 / CFG.cookBurnt, danger: sl.cookB > 1.25 };
-        } else if (sl.state === "burnt") {
-          top = CFG.cookBurnt; rim = CFG.cookBurnt; shownV = CFG.cookBurnt;
-          hint = "버리기";
-        } else if (sl.state === "burst") {
-          top = 0.05; rim = 0.1; shownV = 0;
-          hint = "버리기";
-        }
-        if (imgMode) {
-          hot.querySelectorAll("img.asset").forEach(function (img) {
-            var k = img.dataset.layer, op = 0;
-            if (sl.state === "burst") op = k === "hotteok_burst" ? 1 : 0;
-            else if (k === "hotteok_raw") op = 1;
-            else if (k === "hotteok_golden") op = Math.min(1, shownV);
-            else if (k === "hotteok_burnt") op = Math.max(0, (shownV - 1) / (CFG.cookBurnt - 1));
-            img.style.opacity = op;
-          });
-        } else {
-          hot.style.background = cookColor(top);
-          hot.style.borderColor = cookColor(rim);
-        }
-      }
-      if (sl.state === "dough" && imgMode) {
-        hot.querySelectorAll("img.asset").forEach(function (img) {
-          img.style.opacity = img.dataset.layer === "hotteok_raw" ? 1 : 0;
-        });
-      }
-
-      if (r.hint.textContent !== hint) r.hint.textContent = hint;
-      r.hint.classList.toggle("go", go);
-
-      // 게이지
-      if (!g) {
-        if (r.gaugeKey !== "none") { r.gauge.innerHTML = ""; r.gaugeKey = "none"; }
-      } else {
-        if (r.gaugeKey !== "on") {
-          r.gauge.innerHTML = '<span class="zone"></span><i></i>';
-          r.gaugeKey = "on";
-        }
-        var zone = r.gauge.firstChild, fill = r.gauge.lastChild;
-        zone.style.left = (g.z0 * 100) + "%";
-        zone.style.width = ((g.z1 - g.z0) * 100) + "%";
-        fill.style.width = Math.min(100, g.v * 100) + "%";
-        fill.style.background = g.danger ? "var(--bad)" : (g.v >= g.z0 ? "var(--good)" : "#fff");
-      }
-    });
-
-    // 누르개
-    var pr = $("presser");
-    if (pressingSlot >= 0) {
-      var p = CFG.panSlots[pressingSlot];
-      pr.style.left = (p.x / 100 * STOVE.w) + "px";
-      pr.style.top = (p.y / 100 * STOVE.h - 88) + "px";
-      pr.classList.add("down");
-    } else {
-      pr.style.left = "";
-      pr.style.top = "";
-      pr.classList.remove("down");
-    }
-  }
-
-  // ── 효과 ─────────────────────────────────
-  function pop(text, x, y, cls) {
-    var el = document.createElement("div");
-    el.className = "pop" + (cls ? " " + cls : "");
-    el.textContent = text;
-    el.style.left = x + "px";
-    el.style.top = y + "px";
-    $("fx").appendChild(el);
-    setTimeout(function () { el.remove(); }, 1100);
-  }
-  function hintPop(key, text, x, y) {
-    var now = performance.now();
-    if (lastHint[key] && now - lastHint[key] < 1200) return;
-    lastHint[key] = now;
-    pop(text, x, y, "small");
-  }
-  function slotPos(i) {
-    var p = CFG.panSlots[i];
-    return [STOVE.x + p.x / 100 * STOVE.w, STOVE.y + p.y / 100 * STOVE.h];
-  }
-  function customerPos(i) {
-    var w = (W - 4) / CFG.maxCustomers;
-    return [2 + i * w + w / 2, 70 + 200];
-  }
-  function bump(el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
-
-  function handle(events) {
-    events.forEach(function (e) {
-      var p;
-      switch (e.type) {
-        case "plateFull": hintPop("plateFull", "접시가 꽉 찼어요", SPOT.bowl[0], SPOT.bowl[1] - 20); break;
-        case "doughMade": pop("+1", SPOT.plate[0], SPOT.plate[1] - 30, "small"); break;
-        case "needDough":
-          p = slotPos(e.slot);
-          hintPop("need", s_hasRaw() ? "반죽을 문질러 동그랗게!" : "먼저 반죽을 저어요", p[0], p[1] - 40);
-          break;
-        case "pressed": p = slotPos(e.slot); pop("납작!", p[0], p[1] - 40, "small"); break;
-        case "notYet":
-          p = slotPos(e.slot);
-          hintPop("notYet" + e.slot, e.reason === "press" ? "더 꾹!" : "아직이에요", p[0], p[1] - 40);
-          break;
-        case "burst":
-          p = slotPos(e.slot);
-          pop("실패!", p[0], p[1] - 30, "fail");
-          setTimeout(function () { pop("시럽이 터졌어요", p[0], p[1] + 10, "small"); }, 150);
-          break;
-        case "burnt": p = slotPos(e.slot); pop("실패!", p[0], p[1] - 30, "fail"); break;
-        case "success": p = slotPos(e.slot); pop("성공!", p[0], p[1] - 30); break;
-        case "served":
-          p = customerPos(e.index);
-          pop("+" + e.earned.toLocaleString("ko-KR") + "원", p[0], p[1] - 80, "money");
-          bump(document.querySelector(".score"), "bump");
-          break;
-        case "partial": p = customerPos(e.index); pop(e.left + "개 더!", p[0], p[1] - 80, "small"); break;
-        case "nothingToServe":
-          p = customerPos(e.index);
-          hintPop("nothing", "완성된 호떡이 없어요", p[0], p[1] - 80);
-          break;
-        case "heartLost":
-          bump($("flash"), "on");
-          bump(stage, "shake");
-          var he = heartEls[e.hearts];
-          if (he) bump(he, "lost");
-          try { if (navigator.vibrate) navigator.vibrate(120); } catch (err) { /* 무시 */ }
-          break;
-        case "gameOver":
-          setTimeout(showGameOver, 900);
-          break;
-      }
-    });
-  }
-  function s_hasRaw() { return state && state.doughs.length > 0; }
-
-  // ── 입력 ─────────────────────────────────
-  function toStage(ev) {
-    var r = stage.getBoundingClientRect();
-    return { x: (ev.clientX - r.left) / scale, y: (ev.clientY - r.top) / scale };
-  }
-
-  function onDown(ev) {
-    if (!running) return;
-    var t = ev.target, pt = toStage(ev), el;
-    var act = null;
-
-    if ((el = t.closest(".customer"))) {
-      handle(L.serve(state, +el.dataset.index));
-    } else if ((el = t.closest(".slot"))) {
-      var i = +el.dataset.index;
-      if (state.slots[i].state === "dough") act = { kind: "press", index: i };
-      else handle(L.tapSlot(state, i));
-    } else if ((el = t.closest(".dough"))) {
-      act = { kind: "shape", index: +el.dataset.index };
-    } else if (t.closest("#bowl")) {
-      act = { kind: "stir" };
-    }
-    if (act) {
-      act.x = pt.x; act.y = pt.y;
-      actions[ev.pointerId] = act;
-      try { stage.setPointerCapture(ev.pointerId); } catch (err) { /* 무시 */ }
-    }
-    ev.preventDefault();
-  }
-
-  function onMove(ev) {
-    var act = actions[ev.pointerId];
-    if (!act || !running) return;
-    var pt = toStage(ev);
-    var dist = Math.hypot(pt.x - act.x, pt.y - act.y);
-    act.x = pt.x; act.y = pt.y;
-    if (act.kind === "stir") {
-      handle(L.stir(state, dist));
-      var cx = 136 + 61, cy = 406 + 50;
-      var ang = Math.atan2(pt.y - cy, pt.x - cx) * 180 / Math.PI + 90;
-      $("spatulaPivot").style.transform = "rotate(" + ang + "deg)";
-    } else if (act.kind === "shape") {
-      handle(L.shape(state, act.index, dist));
-    }
-  }
-
-  function onUp(ev) {
-    var act = actions[ev.pointerId];
-    if (!act) return;
-    delete actions[ev.pointerId];
-    if (act.kind === "press" && running) handle(L.pressRelease(state, act.index));
-  }
-
-  // ── 게임 흐름 ────────────────────────────
-  function loop(t) {
-    if (!running) return;
-    var dt = Math.min(0.05, (t - lastT) / 1000 || 0);
-    lastT = t;
-    Object.keys(actions).forEach(function (k) {
-      var a = actions[k];
-      if (a.kind === "press") {
-        var ev = L.pressHold(state, a.index, dt);
-        if (ev.length) { delete actions[k]; handle(ev); }
-      }
-    });
-    handle(L.update(state, dt));
-    render();
-    if (state.over) { running = false; return; }
-    requestAnimationFrame(loop);
-  }
-
-  function start() {
-    state = L.create(CFG);
-    actions = {};
-    build();
-    applyStaticAssets();
-    $("startScreen").hidden = true;
+  function showMenu() {
+    running = false;
+    screen = "menu";
+    releaseHold();
     $("overScreen").hidden = true;
+    $("menuScreen").hidden = false;
+    renderMenu();
+  }
+
+  // ── 게임 시작 ──────────────────────────────
+  function start(id) {
+    snackId = id;
+    L = SNACK_LOGIC[id];
+    V = SNACK_VIEW[id];
+    g = GameCore.create(CFG.common, CFG.snacks[id], L.flavors);
+    st = L.create(CFG.snacks[id]);
+    ids = L.stations(st).concat(["counter"]);
+    focus = 0;
+    holdId = null;
+    pointer = null;
+    buildStations();
+    $("street").innerHTML = "";
+    customerEls = {};
+    $("menuScreen").hidden = true;
+    $("overScreen").hidden = true;
+    stage.dataset.snack = id;
+    screen = "play";
     running = true;
     lastT = performance.now();
     render();
     requestAnimationFrame(loop);
   }
 
-  function readBest() {
-    try { return parseInt(localStorage.getItem("hotteok_best") || "0", 10) || 0; } catch (e) { return 0; }
-  }
-  function writeBest(v) {
-    try { localStorage.setItem("hotteok_best", String(v)); } catch (e) { /* 저장 불가 환경 */ }
+  // ── 작업대 DOM ─────────────────────────────
+  var stationEls = {};
+
+  function buildStations() {
+    var box = $("stations");
+    box.innerHTML = "";
+    stationEls = {};
+    ids.forEach(function (id, i) {
+      var lay = id === "counter" ? COUNTER : V.layout[id];
+      var el = document.createElement("div");
+      el.className = "station st-" + id.replace(/\d/, "");
+      el.dataset.id = id;
+      el.style.left = lay.x + "px";
+      el.style.top = lay.y + "px";
+      el.style.width = lay.w + "px";
+      el.style.height = lay.h + "px";
+      el.innerHTML = '<div class="st-body"></div><div class="st-buttons"></div>' +
+        '<div class="st-label"><b>' + (i + 1) + "</b>" + (id === "counter" ? "주기" : lay.label) + "</div>";
+      box.appendChild(el);
+      stationEls[id] = { el: el, body: el.children[0], btns: el.children[1], html: "", btnKey: "" };
+    });
   }
 
-  function showGameOver() {
-    var best = readBest(), isNew = state.score > best;
-    if (isNew) writeBest(state.score);
-    $("finalScore").textContent = state.score.toLocaleString("ko-KR");
-    $("finalDetail").textContent = "호떡 " + state.servedCount + "개를 팔았어요";
-    $("finalBest").textContent = isNew ? "최고 기록이에요!" : "최고 기록 " + best.toLocaleString("ko-KR") + "원";
-    var rh = $("resultHotteok"), good = state.servedCount >= 10;
-    rh.innerHTML = "";
-    rh.className = "result-hotteok" + (good ? "" : " burnt");
-    useAsset(rh, good ? "hotteok_golden" : "hotteok_burnt");
+  // ── 그리기 ─────────────────────────────────
+  var customerEls = {};
+
+  function renderHearts() {
+    var box = $("hearts"), html = "";
+    for (var i = 0; i < CFG.common.startHearts; i++) {
+      var full = i < g.hearts, k = full ? "common_heart_full" : "common_heart_empty";
+      html += '<span class="heart' + (full ? "" : " empty") + '">' + Assets.img(k, "fill", full ? "❤️" : "🤍") + "</span>";
+    }
+    if (box.dataset.html !== html) { box.innerHTML = html; box.dataset.html = html; }
+  }
+
+  function orderHtml(cu) {
+    return g.flavors.map(function (f) {
+      if (!cu.need[f] && g.flavors.length > 1) return "";
+      var name = g.flavors.length > 1 ? '<em class="fl-' + f + '">' + V.flavorNames[f] + "</em>" : "";
+      return '<span class="order-item' + (cu.need[f] ? "" : " got") + '">' + Kit.itemIcon(V.items[f]) + name + "<b>×" + cu.need[f] + "</b></span>";
+    }).join("");
+  }
+
+  function renderCustomers() {
+    var street = $("street"), seen = {};
+    g.customers.forEach(function (cu, i) {
+      seen[cu.id] = true;
+      var ref = customerEls[cu.id];
+      if (!ref) {
+        var el = document.createElement("div");
+        el.className = "customer enter look" + cu.look;
+        el.innerHTML = '<div class="bubble"></div><div class="patience"><i></i></div><div class="face"></div><div class="scarf"></div>';
+        street.appendChild(el);
+        void el.offsetWidth;
+        el.classList.remove("enter");
+        ref = customerEls[cu.id] = { el: el, order: "", mood: "" };
+      }
+      var el2 = ref.el;
+      el2.classList.toggle("front", i === 0);
+      el2.classList.toggle("back", i > 0);
+      var oh = orderHtml(cu);
+      if (ref.order !== oh) { el2.children[0].innerHTML = oh; ref.order = oh; }
+      var r = cu.patience / cu.maxPatience, t = CFG.common.moodThresholds;
+      var bar = el2.children[1].firstChild;
+      bar.style.width = (r * 100).toFixed(1) + "%";
+      bar.style.background = r >= t.happy ? "var(--good)" : r >= t.neutral ? "var(--warn)" : "var(--bad)";
+      var mood = GameCore.mood(g, cu);
+      if (ref.mood !== mood) {
+        ref.mood = mood;
+        el2.children[2].innerHTML = Assets.img("common_customer_" + mood, "face-img",
+          '<span class="face-emoji">' + { happy: "😊", neutral: "😐", angry: "😠", furious: "🤬" }[mood] + "</span>");
+        el2.classList.toggle("angry", mood === "angry");
+      }
+      if (cu.leaving) el2.classList.add("leave-" + cu.leaving);
+    });
+    Object.keys(customerEls).forEach(function (id) {
+      if (!seen[id]) { customerEls[id].el.remove(); delete customerEls[id]; }
+    });
+  }
+
+  function counterHtml() {
+    var trays = g.flavors.map(function (f) {
+      var name = g.flavors.length > 1 ? V.flavorNames[f] : "완성";
+      return '<div class="tray' + (g.ready[f] ? "" : " empty") + '" data-serve="' + f + '">' +
+        Kit.itemIcon(V.items[f]) + '<span class="tray-name">' + name + '</span><b class="tray-count">' + g.ready[f] + "</b></div>";
+    }).join("");
+    return '<div class="trays n' + g.flavors.length + '">' + trays + "</div>";
+  }
+
+  function hintFor(id) {
+    if (id === "counter") {
+      if (g.flavors.length > 1) return { act: "맛을 골라 앞 손님에게 주기", mode: null, up: "팥 주기", down: "슈크림 주기", go: true };
+      return { act: "앞 손님에게 주기", mode: "tap", go: g.ready.plain > 0 };
+    }
+    return V.hint(g, st, id);
+  }
+
+  var MODE_TEXT = {
+    key:   { tap: "스페이스", hold: "스페이스 꾹", mash: "스페이스 연타" },
+    mouse: { tap: "클릭", hold: "꾹 클릭", mash: "연타" },
+    touch: { tap: "탭", hold: "길게 누르기", mash: "연타·문지르기" }
+  };
+
+  function renderHintbar() {
+    var id = ids[focus], h = hintFor(id), parts = [];
+    if (h.mode) parts.push("<kbd>" + MODE_TEXT[inputMode][h.mode] + "</kbd> " + h.act);
+    else parts.push(h.act);
+    if (h.up) parts.push(inputMode === "key" ? "<kbd>↑</kbd> " + h.up + " <kbd>↓</kbd> " + h.down : "버튼으로 고르기");
+    if (inputMode === "key" && h.alt) parts.push(h.alt);
+    var nav = inputMode === "key" ? '<span class="nav"><kbd>←</kbd><kbd>→</kbd> 작업대</span>' : "";
+    var html = '<span class="where">' + (id === "counter" ? "주기" : V.layout[id].label) + "</span>" + parts.join(" · ") + nav;
+    var bar = $("hintbar");
+    if (bar.dataset.html !== html) { bar.innerHTML = html; bar.dataset.html = html; }
+  }
+
+  function render() {
+    renderHearts();
+    $("score").textContent = g.score.toLocaleString("ko-KR");
+    renderCustomers();
+
+    ids.forEach(function (id, i) {
+      var ref = stationEls[id];
+      var html = id === "counter" ? counterHtml() : V.render(g, st, id, { holding: holdId === id });
+      if (ref.html !== html) { ref.body.innerHTML = html; ref.html = html; }
+      var h = hintFor(id);
+      ref.el.classList.toggle("focused", i === focus);
+      ref.el.classList.toggle("go", !!h.go && h.mode !== null && id !== "counter");
+      ref.el.classList.toggle("holding", holdId === id);
+      var btnKey = h.up && id !== "counter" ? h.up + "|" + h.down : "";
+      if (ref.btnKey !== btnKey) {
+        ref.btnKey = btnKey;
+        ref.btns.innerHTML = btnKey ? '<button type="button" class="ud-btn" data-dir="up">▲ ' + h.up +
+          '</button><button type="button" class="ud-btn" data-dir="down">▼ ' + h.down + "</button>" : "";
+      }
+    });
+    renderHintbar();
+  }
+
+  // ── 효과 ───────────────────────────────────
+  function posOf(at) {
+    if (at === "customer") return [110, 190];
+    if (at === "counter") return [COUNTER.x + COUNTER.w / 2, COUNTER.y + 10];
+    var l = V.layout[at];
+    return l ? [l.x + l.w / 2, l.y + l.h / 2 - 10] : [W / 2, H / 2];
+  }
+
+  function pop(text, at, cls) {
+    var key = at + text, now = performance.now();
+    if (cls === "small" && lastPop[key] && now - lastPop[key] < 900) return;
+    lastPop[key] = now;
+    var p = posOf(at), el = document.createElement("div");
+    el.className = "pop " + (cls || "");
+    el.textContent = text;
+    el.style.left = p[0] + "px";
+    el.style.top = p[1] + "px";
+    $("fx").appendChild(el);
+    setTimeout(function () { el.remove(); }, 1100);
+  }
+
+  function bump(el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
+
+  function handle(ev) {
+    ev.forEach(function (e) {
+      if (e.type === "pop") pop(e.text, e.at, e.cls);
+      else if (e.type === "served") {
+        pop("+" + e.earned.toLocaleString("ko-KR") + "원", "customer", "money");
+        bump(document.querySelector(".score"), "bump");
+      } else if (e.type === "heartLost") {
+        bump($("flash"), "on");
+        bump(stage, "shake");
+        try { if (navigator.vibrate) navigator.vibrate(120); } catch (err) { /* 무시 */ }
+      } else if (e.type === "gameOver") {
+        setTimeout(showOver, 900);
+      }
+    });
+  }
+
+  // ── 동작 ───────────────────────────────────
+  function act(fn) {
+    if (screen !== "play" || g.over) return;
+    var ev = [];
+    fn(ev);
+    handle(ev);
+    render(); // 누르자마자 화면에 반영
+  }
+
+  function serve(flavor) {
+    act(function (ev) {
+      if (g.flavors.length > 1 && !flavor) {
+        focus = ids.indexOf("counter");
+        GameCore.pop(ev, "counter", "↑ 팥 / ↓ 슈크림을 골라 주세요", "small");
+        return;
+      }
+      GameCore.serve(g, flavor || null, ev);
+    });
+  }
+
+  function beginPress(id) {
+    if (id === "counter") { if (g.flavors.length === 1) serve(); else serve(null); return; }
+    releaseHold();
+    act(function (ev) { L.press(g, st, id, ev); });
+    holdId = id;
+  }
+
+  function releaseHold() {
+    if (!holdId) return;
+    var id = holdId;
+    holdId = null;
+    if (screen === "play") act(function (ev) { L.release(g, st, id, ev); });
+  }
+
+  function arrow(dir) {
+    var id = ids[focus];
+    if (id === "counter") {
+      if (g.flavors.length > 1) serve(dir === "up" ? "red" : "cream");
+      return;
+    }
+    act(function (ev) { L[dir](g, st, id, ev); });
+  }
+
+  function moveFocus(d) {
+    releaseHold();
+    focus = (focus + d + ids.length) % ids.length;
+  }
+
+  // ── 키보드 ─────────────────────────────────
+  document.addEventListener("keydown", function (e) {
+    var k = e.key;
+    if ([" ", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter"].indexOf(k) >= 0) e.preventDefault();
+    inputMode = "key";
+
+    if (screen === "menu") {
+      if (k === "ArrowLeft") { menuIndex = (menuIndex + 2) % 3; renderMenu(); }
+      else if (k === "ArrowRight") { menuIndex = (menuIndex + 1) % 3; renderMenu(); }
+      else if ((k === " " || k === "Enter") && !e.repeat) start(CFG.snackOrder[menuIndex]);
+      return;
+    }
+    if (screen === "over") {
+      if ((k === " " || k === "Enter") && !e.repeat) start(snackId);
+      else if (k === "Escape") showMenu();
+      return;
+    }
+    if (k === "Escape") { showMenu(); return; }
+    if (k === "ArrowLeft") moveFocus(-1);
+    else if (k === "ArrowRight") moveFocus(1);
+    else if (k === "ArrowUp" && !e.repeat) arrow("up");
+    else if (k === "ArrowDown" && !e.repeat) arrow("down");
+    else if (k === " " && !e.repeat) beginPress(ids[focus]);
+    else if (k === "Enter" && !e.repeat) serve(null);
+    else if (/^[1-9]$/.test(k) && +k <= ids.length) { releaseHold(); focus = +k - 1; }
+  });
+
+  document.addEventListener("keyup", function (e) {
+    if (e.key === " " && screen === "play") releaseHold();
+  });
+
+  // ── 마우스 / 터치 ──────────────────────────
+  function toStage(e) {
+    var r = stage.getBoundingClientRect();
+    return { x: (e.clientX - r.left) / scale, y: (e.clientY - r.top) / scale };
+  }
+
+  stage.addEventListener("pointerdown", function (e) {
+    inputMode = e.pointerType === "touch" ? "touch" : "mouse";
+    var t = e.target, el;
+
+    if (screen === "menu") {
+      if ((el = t.closest(".menu-card"))) start(el.dataset.snack);
+      return;
+    }
+    if (screen !== "play") return;
+
+    if ((el = t.closest("[data-serve]"))) {
+      focus = ids.indexOf("counter");
+      serve(g.flavors.length > 1 ? el.dataset.serve : null);
+    } else if (t.closest(".customer")) {
+      serve(null);
+    } else if ((el = t.closest(".ud-btn"))) {
+      var sid = el.closest(".station").dataset.id;
+      focus = ids.indexOf(sid);
+      arrow(el.dataset.dir);
+    } else if ((el = t.closest(".station"))) {
+      var id = el.dataset.id;
+      focus = ids.indexOf(id);
+      beginPress(id);
+      var p = toStage(e);
+      pointer = { id: e.pointerId, station: id, x: p.x, y: p.y, acc: 0 };
+      try { stage.setPointerCapture(e.pointerId); } catch (err) { /* 무시 */ }
+    } else {
+      return;
+    }
+    e.preventDefault();
+  });
+
+  window.addEventListener("pointermove", function (e) {
+    if (!pointer || pointer.id !== e.pointerId || screen !== "play") return;
+    var p = toStage(e);
+    pointer.acc += Math.hypot(p.x - pointer.x, p.y - pointer.y);
+    pointer.x = p.x; pointer.y = p.y;
+    if (!L.rubbable(st, pointer.station)) return;
+    while (pointer.acc >= RUB_STEP) {
+      pointer.acc -= RUB_STEP;
+      act(function (ev) { L.press(g, st, pointer.station, ev); });
+    }
+  });
+
+  function pointerEnd(e) {
+    if (!pointer || pointer.id !== e.pointerId) return;
+    pointer = null;
+    releaseHold();
+  }
+  window.addEventListener("pointerup", pointerEnd);
+  window.addEventListener("pointercancel", pointerEnd);
+  document.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+  window.addEventListener("blur", releaseHold);
+
+  // ── 루프 ───────────────────────────────────
+  function loop(t) {
+    if (!running) return;
+    var dt = Math.min(0.05, (t - lastT) / 1000 || 0);
+    lastT = t;
+    var ev = [];
+    if (holdId) L.hold(g, st, holdId, dt, ev);
+    L.update(g, st, dt, ev);
+    GameCore.update(g, dt, ev);
+    handle(ev);
+    render();
+    if (g.over) { running = false; holdId = null; return; }
+    requestAnimationFrame(loop);
+  }
+
+  // ── 결과 ───────────────────────────────────
+  function readBest(id) {
+    try { return parseInt(localStorage.getItem("winter_best_" + id) || "0", 10) || 0; } catch (e) { return 0; }
+  }
+  function writeBest(id, v) {
+    try { localStorage.setItem("winter_best_" + id, String(v)); } catch (e) { /* 저장 불가 */ }
+  }
+
+  function showOver() {
+    screen = "over";
+    var best = readBest(snackId), isNew = g.score > best;
+    if (isNew) writeBest(snackId, g.score);
+    var s = CFG.snacks[snackId];
+    $("overSnack").textContent = s.name + " 가게";
+    $("finalScore").textContent = g.score.toLocaleString("ko-KR");
+    $("finalDetail").textContent = s.name + " " + g.sold + "개를 팔았어요";
+    $("finalBest").textContent = isNew && g.score > 0 ? "최고 기록이에요!" : "최고 기록 " + Math.max(best, g.score).toLocaleString("ko-KR") + "원";
     $("overScreen").hidden = false;
   }
 
-  // ── 시작 ─────────────────────────────────
+  // ── 시작 ───────────────────────────────────
+  $("menuBtn").addEventListener("click", showMenu);
+  $("retryBtn").addEventListener("click", function () { start(snackId); });
+  $("backBtn").addEventListener("click", showMenu);
   window.addEventListener("resize", fit);
   fit();
-  stage.addEventListener("pointerdown", onDown);
-  window.addEventListener("pointermove", onMove);
-  window.addEventListener("pointerup", onUp);
-  window.addEventListener("pointercancel", onUp);
-  document.addEventListener("contextmenu", function (e) { e.preventDefault(); });
-
-  $("startBtn").addEventListener("click", start);
-  $("retryBtn").addEventListener("click", start);
-
-  A.preload("assets/", function () {
-    applyStaticAssets();
-  });
+  makeSnow();
+  renderMenu();
+  Assets.preload("assets/", function () { if (screen === "menu") renderMenu(); });
 })();

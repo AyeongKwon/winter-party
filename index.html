@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-  <meta name="theme-color" content="#ffb3e3">
-  <title>호떡 만들기</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥞</text></svg>">
+  <meta name="theme-color" content="#141b36">
+  <title>겨울 간식 포장마차</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍢</text></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Jua&display=swap" rel="stylesheet">
@@ -13,90 +13,67 @@
 </head>
 <body>
   <div id="viewport">
-    <div id="stage">
-      <!-- 상단: 하트 / 점수 -->
+    <main id="stage">
+      <div class="sky"></div>
+      <div class="lamp-glow"></div>
+      <div class="snow" id="snow" aria-hidden="true"></div>
+      <div class="awning" aria-hidden="true"></div>
+      <div class="lamp" aria-hidden="true"></div>
+
       <header class="hud">
         <div class="hearts" id="hearts"></div>
         <div class="score"><span id="score">0</span>원</div>
+        <button class="menu-btn" id="menuBtn" type="button">메뉴</button>
       </header>
 
-      <!-- 손님 -->
-      <section class="street" id="customers"></section>
+      <section class="street" id="street" aria-label="손님"></section>
 
-      <!-- 테이블 -->
-      <div class="table-top"></div>
-      <div class="table-edge"></div>
-      <div class="table-base"></div>
+      <div class="counter-wood" aria-hidden="true"></div>
+      <div class="work-surface" aria-hidden="true"></div>
+      <div id="stations"></div>
 
-      <!-- 완성 접시 -->
-      <div class="station tray" id="tray">
-        <div class="plate-art" data-asset="plate"></div>
-        <div class="tray-stack" id="trayStack"></div>
-        <div class="tray-count" id="trayCount">0</div>
-        <div class="station-label">완성 호떡</div>
-      </div>
-
-      <!-- 1단계: 반죽 젓기 -->
-      <div class="station bowl-station" id="bowl">
-        <div class="bowl-art" data-asset="bowl"><div class="batter"></div></div>
-        <div class="spatula-pivot" id="spatulaPivot">
-          <div class="spatula-art" data-asset="spatula"></div>
-        </div>
-        <div class="mini-bar"><i id="stirBar"></i></div>
-        <div class="station-label">빙글빙글 젓기</div>
-      </div>
-
-      <!-- 2단계: 반죽 만지기 -->
-      <div class="station dough-station" id="doughPlate">
-        <div class="plate-art" data-asset="plate"></div>
-        <div class="dough-balls" id="doughBalls"></div>
-        <div class="station-label">문질러 동그랗게</div>
-      </div>
-
-      <!-- 3단계: 철판 -->
-      <div class="stove" id="stove">
-        <div class="pan-art" data-asset="pan">
-          <div class="cooktop"><span class="cooktop-display">P5</span></div>
-          <div class="pan-body"></div>
-        </div>
-        <div class="slots" id="slots"></div>
-        <div class="presser" id="presser"><div class="presser-art" data-asset="presser"><span></span></div></div>
-      </div>
+      <div class="hintbar" id="hintbar" aria-live="polite"></div>
 
       <div class="fx" id="fx"></div>
       <div class="flash" id="flash"></div>
 
-      <!-- 시작 화면 -->
-      <section class="screen" id="startScreen">
-        <p class="eyebrow">LET'S COOK</p>
-        <h1>호떡 만들기</h1>
-        <div class="hero-hotteok" data-asset="hotteok_golden"></div>
-        <ol class="howto">
-          <li><b>젓기</b> 볼을 빙글빙글 문질러 반죽을 만들어요</li>
-          <li><b>만지기</b> 반죽을 문질러 동그랗게 다듬어요</li>
-          <li><b>굽기</b> 빈 칸을 눌러 올리고, 꾹 눌러 납작하게. 너무 세게 누르면 시럽이 터져요</li>
-          <li><b>뒤집기</b> 노릇해지면 눌러 뒤집고, 다시 눌러 꺼내요</li>
-          <li><b>서빙</b> 손님을 눌러 호떡을 건네요. 늦으면 하트가 줄어요</li>
-        </ol>
-        <button class="btn" id="startBtn">장사 시작</button>
+      <!-- 메뉴 -->
+      <section class="screen" id="menuScreen">
+        <h1 class="logo">겨울 간식<br>포장마차</h1>
+        <p class="lead">오늘은 뭘 팔아볼까요?</p>
+        <div class="menu-cards" id="menuCards"></div>
+        <div class="keys-help">
+          <p><kbd>←</kbd><kbd>→</kbd> 작업대 고르기 <kbd>스페이스</kbd> 하기 <kbd>↑</kbd><kbd>↓</kbd> 고르기·조절 <kbd>엔터</kbd> 손님에게 주기</p>
+          <p class="touch-only">폰에서는 탭, 길게 누르기, 문지르기로 해요</p>
+        </div>
       </section>
 
-      <!-- 게임 오버 -->
-      <section class="screen over" id="overScreen" hidden>
-        <p class="eyebrow">RESULT</p>
-        <h1>오늘 장사 끝!</h1>
+      <!-- 결과 -->
+      <section class="screen" id="overScreen" hidden>
+        <p class="over-snack" id="overSnack"></p>
+        <h1 class="over-title">오늘 장사 끝!</h1>
         <div class="final-score"><span id="finalScore">0</span>원</div>
         <p class="final-detail" id="finalDetail"></p>
         <p class="final-best" id="finalBest"></p>
-        <div class="result-plate"><div class="result-hotteok" id="resultHotteok"></div></div>
-        <button class="btn" id="retryBtn">다시 하기</button>
+        <div class="over-buttons">
+          <button class="btn" id="retryBtn" type="button">다시 하기</button>
+          <button class="btn quiet" id="backBtn" type="button">다른 간식</button>
+        </div>
+        <p class="keys-help small"><kbd>스페이스</kbd> 다시 하기 <kbd>Esc</kbd> 다른 간식</p>
       </section>
-    </div>
+    </main>
   </div>
 
   <script src="js/config.js"></script>
   <script src="js/assets.js"></script>
-  <script src="js/logic.js"></script>
+  <script src="js/core.js"></script>
+  <script src="js/logic/bungeo.js"></script>
+  <script src="js/logic/hotteok.js"></script>
+  <script src="js/logic/eomuk.js"></script>
+  <script src="js/view/kit.js"></script>
+  <script src="js/view/bungeo.js"></script>
+  <script src="js/view/hotteok.js"></script>
+  <script src="js/view/eomuk.js"></script>
   <script src="js/ui.js"></script>
 </body>
 </html>
